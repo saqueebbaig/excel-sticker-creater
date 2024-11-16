@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Select Columns to Concatenate from Google Sheets</title>
+    <link
+      rel="stylesheet"
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.datatables.net/1.10.21/css/jquery.dataTables.min.css"
+    />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.0/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.2.0/exceljs.min.js"></script>
+    <script src="https://cdn.datatables.net/1.10.21/js/jquery.dataTables.min.js"></script>
+    <style>
+      .container {
+        min-height: 91vh;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container mt-5">
+      <h1 class="text-center">
+        Select Columns to Concatenate from Google Sheets
+      </h1>
+      <div class="form-group">
+        <input
+          type="text"
+          class="form-control"
+          id="sheetUrl"
+          placeholder="Enter Google Sheet URL"
+        />
+      </div>
+      <button id="loadButton" class="btn btn-primary mb-3">Load Data</button>
+      <div id="columnSelection"></div>
+      <button
+        id="concatButton"
+        class="btn btn-success mb-3"
+        style="display: none"
+      >
+        Concatenate Selected Columns
+      </button>
+      <button id="exportButton" class="btn btn-info mb-3" style="display: none">
+        Export to Excel
+      </button>
+      <div id="data"></div>
+    </div>
+
+    <footer class="bg bg-dark text-center text-light py-2">
+      Developed With ❤️ By Saqueeb
+    </footer>
+
+    <script>
+      let csvData = []; // Variable to store the parsed CSV data
+      let concatenatedData = []; // Variable to store concatenated results
+
+      $(document).ready(function () {
+        $("#loadButton").on("click", function () {
+          const sheetUrl = $("#sheetUrl").val().trim();
+          const csvUrl = sheetUrl.replace(/\/edit.*$/, "/gviz/tq?tqx=out:csv");
+
+          // Fetch data from the Google Sheet in CSV format
+          $.get(csvUrl, function (data) {
+            const rows = data.split("\n").map((row) => row.split(","));
+            csvData = rows; // Store parsed CSV data
+            displayColumnSelection(csvData);
+          }).fail(function () {
+            alert(
+              "Failed to load data from Google Sheets. Please check the URL."
+            );
+          });
+        });
+
+        function displayColumnSelection(data) {
+          let html = "<h3>Select Columns to Concatenate:</h3>";
+          const headers = data[0]; // Assume the first row contains headers
+          headers.forEach((header, index) => {
+            html += `<div class="form-check">
+                        <input type="checkbox" class="form-check-input column-checkbox" value="${index}">
+                        <label class="form-check-label">${header.replace(
+                          /"/g,
+                          ""
+                        )}</label>
+                    </div>`;
+          });
+          $("#columnSelection").html(html);
+          $("#concatButton").show(); // Show the concatenate button
+        }
+
+        $("#concatButton").on("click", function () {
+          const selectedColumns = $(".column-checkbox:checked")
+            .map(function () {
+              return parseInt($(this).val(), 10);
+            })
+            .get();
+
+          if (selectedColumns.length === 0) {
+            alert("Please select at least one column to concatenate.");
+            return;
+          }
+
+          concatenatedData = displayConcatenatedData(selectedColumns);
+          $("#exportButton").show(); // Show the export button
+        });
+
+        function displayConcatenatedData(selectedColumns) {
+          let html =
+            '<table id="dataTable" class="table table-bordered table-striped">';
+          html += "<thead><tr><th>Concatenated Data</th></tr></thead><tbody>"; // Table header
+
+          const results = []; // Array to hold the concatenated results
+
+          csvData.forEach((row, index) => {
+            if (index > 0) {
+              // Skip header row for concatenation
+              // Concatenate selected columns
+              const concatenatedValue = selectedColumns
+                .map((colIndex) => {
+                  const label = csvData[0][colIndex].replace(/"/g, ""); // Remove double quotes from label
+                  const value = (row[colIndex] || "").replace(/"/g, ""); // Remove double quotes from value
+                  return `${label}: ${value}`; // Create the plain text string
+                })
+                .join(", "); // Join with a comma and space
+
+              html += `<tr><td>${concatenatedValue}</td></tr>`;
+              results.push({ Concatenated: concatenatedValue, rowData: row });
+            }
+          });
+          html += "</tbody></table>";
+          $("#data").html(html);
+
+          // Initialize DataTable for better UI
+          $("#dataTable").DataTable();
+
+          return results; // Return the results array
+        }
+
+        $("#exportButton").on("click", function () {
+          const workbook = new ExcelJS.Workbook();
+          const worksheet = workbook.addWorksheet("Concatenated Data");
+
+          // Add a single header for the concatenated data
+          worksheet.addRow(["Concatenated Data"]);
+
+          concatenatedData.forEach((item) => {
+            // Build rich text for bold column names and normal data
+            const richTextParts = [];
+            richTextParts.push({ text: "To,", font: { bold: true } });
+            richTextParts.push({ text: "\n" });
+            item.Concatenated.split(", ").forEach((part, index) => {
+              const [label, value] = part.split(": ");
+              if (label && value) {
+                if (index === 0) {
+                  // No bold for the first item
+                  richTextParts.push(
+                    { text: value + "", font: { bold: true }  } 
+                  );
+                } else {
+                  // Bold for subsequent items
+                  richTextParts.push(
+                    { text: `${label}: `, font: { bold: true } }, 
+                    { text: value + "" },
+                    { text: "\n" }
+                  );
+                }
+                richTextParts.push({ text: "\n" });
+              }
+            });
+
+            // Add the rich text value as a new row
+            // richTextParts.push({ text: "\n" });
+            richTextParts.push({ text: "From,", font: { bold: true } });
+            richTextParts.push({ text: "\n" });
+            richTextParts.push({
+              text: "3D Power Visualization Pvt. Ltd. ",
+              font: { bold: true },
+            });
+            richTextParts.push({ text: "\n" });
+            richTextParts.push({
+              text: "Mumbai | Pune | Hyderabad | Bangalore",
+            });
+            richTextParts.push({ text: "\n" });
+            richTextParts.push({ text: "Mob. No. : -", font: { bold: true } });
+            richTextParts.push({ text: " 95273 82400 | 93720 32805" });
+            worksheet.addRow().getCell(1).value = { richText: richTextParts };
+          });
+
+          // Save the Excel file
+          workbook.xlsx.writeBuffer().then((buffer) => {
+            const blob = new Blob([buffer], {
+              type: "application/octet-stream",
+            });
+            const link = document.createElement("a");
+            link.href = window.URL.createObjectURL(blob);
+            link.download = "concatenated_data.xlsx";
+            link.click();
+          });
+        });
+      });
+    </script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.bundle.min.js"></script>
+  </body>
+</html>
